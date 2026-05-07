@@ -58,6 +58,20 @@ REG_MOTOR_RATED_W: Final = 0x0113  # u16: rated wattage in watts
 # Recipe / program-arm.
 REG_RECIPE: Final = 0x0200          # u16: 0 = idle/cancel, 1..N = saved program slot
 
+# Custom-program "step" buffer (Ascent C-panel, panel-type 2).
+# The Perfect Blend app's ``setBlenderProgram`` panel-2 path writes one
+# u16 per consecutive register starting at 0x0201, then triggers the
+# upload by writing a bitmask to :data:`REG_PROGRAM_FLAG`. Each step is
+# encoded as a (speed, time) pair, so:
+#
+#     0x0201  step 0 speed       0x0202  step 0 time
+#     0x0203  step 1 speed       0x0204  step 1 time
+#     ...
+#
+# A maximum of 6 steps fit in the 12-u16 buffer (0x0201..0x020C).
+REG_CUSTOM_PROGRAM_BASE: Final = 0x0201  # first u16 of the step buffer
+CUSTOM_PROGRAM_MAX_STEPS: Final = 6      # 12 u16s ÷ 2 (speed,time) = 6 steps
+
 # Panel / UI block.
 REG_PANEL_ARMED: Final = 0x347F     # u16: 1 when device is ready / start-armed
 REG_NFC_HARDWARE: Final = 0x3480    # u16 x 2: container hardware identifier
@@ -67,10 +81,22 @@ REG_PANEL_3482: Final = 0x3482      # u16: container variant or sub-type
 # Program-load registers (used by the official app's setBlenderProgram).
 # Writing to REG_RECIPE with a non-zero slot value arms a saved program;
 # the device then waits for a physical "Start" press to spin the blade.
-REG_PROGRAM_FLAG: Final = 0x3483    # u16: bitmask of program slot to load
-REG_PROGRAM_STEP_BASE: Final = 0x3406  # u16 x N: program step buffer
-REG_PROGRAM_LOAD_CMD: Final = 0x3404   # u16: 1 = "begin load"
-REG_PROGRAM_READY: Final = 0x3405      # u16: program-ready flag
+# REG_PROGRAM_FLAG is the panel-2 "fire" register: writing a bitmask
+# ``1 << (step_count - 1)`` finalises and starts the previously-uploaded
+# custom program in 0x0201..0x020C.
+REG_PROGRAM_FLAG: Final = 0x3483    # u16: bitmask, fires the staged custom program
+REG_PROGRAM_STEP_BASE_PANEL3: Final = 0x3406  # u16 x N: panel-type-3 step buffer
+REG_PROGRAM_LOAD_CMD: Final = 0x3404   # u16: panel-3 "begin load"
+REG_PROGRAM_READY: Final = 0x3405      # u16: panel-3 program-ready flag
+
+# Speed / time encoding for custom-program steps. Vitamix dials run from
+# 1 ("Variable 1", lowest) to 10 ("Variable 10", highest); 0 means "off".
+# The firmware accepts those values verbatim in the speed slot.
+MIN_SPEED: Final = 0    # 0 = motor off
+MAX_SPEED: Final = 10   # full speed (Variable 10 / High)
+
+# Time slot is u16 seconds. 0xFFFF = ~18h, used as "run forever" sentinel.
+MAX_STEP_SECONDS: Final = 0xFFFF
 
 
 # ---------------------------------------------------------------------------

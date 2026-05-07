@@ -20,12 +20,19 @@ from bleak import BleakClient, BleakScanner
 from bleak.backends.device import BLEDevice
 
 from .const import (
+    CUSTOM_PROGRAM_MAX_STEPS,
+    DEFAULT_MTU,
+    MAX_SPEED,
+    MAX_STEP_SECONDS,
+    MIN_SPEED,
     NOTIFY_CHARACTERISTIC_UUID,
+    REG_CUSTOM_PROGRAM_BASE,
     REG_MOTOR_MAX_RPM,
     REG_MOTOR_RATED_W,
     REG_MOTOR_RUN,
     REG_NFC_HARDWARE,
     REG_PANEL_ARMED,
+    REG_PROGRAM_FLAG,
     REG_RECIPE,
     SLAVE_CPANEL,
     WRITE_CHARACTERISTIC_UUID,
@@ -268,6 +275,158 @@ class VitamixClient:
                 f"slot must be >= 1; use cancel_program() for slot 0 (got {slot})"
             )
         return await self.write_register(REG_RECIPE, slot)
+
+    # -- custom-program / motor control (0.3.0+) ----------------------------
+    #
+    # The Ascent C-panel exposes a 12-u16 "scratch" program buffer at
+    # registers 0x0201..0x020C and fires the staged buffer when a bitmask
+    # is written to register 0x3483 (REG_PROGRAM_FLAG). Each step is a
+    # (speed, time) pair, so we can build anything from a single
+    # constant-speed run to a 6-step recipe by uploading the buffer and
+    # then writing ``1 << (step_count - 1)`` to REG_PROGRAM_FLAG.
+    #
+    # Speed values use the same 0..10 dial scale the firmware exposes on
+    # its physical interface; time values are in seconds.
+
+    async def upload_custom_program(
+        self,
+        steps: list[tuple[int, int]] | tuple[tuple[int, int], ...],
+    ) -> None:
+        """Stage a custom program of up to 6 (speed, time) steps.
+
+        This writes the step buffer to registers 0x0201.. but does NOT
+        start the program — call :meth:`commit_custom_program` (or one of
+        the higher-level helpers like :meth:`set_motor_speed`) afterwards
+        to fire it.
+
+        Args:
+            steps: list of ``(speed, seconds)`` tuples. ``speed`` must be
+                in the range 0..10 (Vitamix variable-speed dial). 0 stops
+                the motor; 10 is full speed. ``seconds`` is a u16 timer
+                (max ``0xFFFF`` ≈ 18h, used as "run forever" sentinel).
+
+        Raises:
+            ValueError: if ``steps`` is empty, contains too many entries,
+                or has speed/time values outside the supported range.
+        """
+        self._validate_steps(steps)
+        # Flatten into the wire layout: [speed_0, time_0, speed_1, ...].
+        payload: list[int] = []
+        for speed, seconds in steps:
+            payload.append(speed)
+            payload.append(seconds)
+        # The full block is 12 u16s on the wire — pad unused slots with
+        # zeros so the firmware sees a deterministic state and old data
+        # from a previous program can't leak into the next run.
+        while len(payload) < CUSTOM_PROGRAM_MAX_STEPS * 2:
+            payload.append(0)
+        # Default MTU only fits 9 u16s per write packet; chunk the upload.
+        # The firmware disassembly shows the official app issues one
+        # write per u16, but writing in MTU-sized batches is faster and
+        # equivalent on the wire.
+        batch = (DEFAULT_MTU - 5) // 2
+        for offset in range(0, len(payload), batch):
+            slice_ = payload[offset : offset + batch]
+            await self.write_registers(
+                REG_CUSTOM_PROGRAM_BASE + offset, slice_
+            )
+
+    async def commit_custom_program(self, step_count: int) -> PacketStatus:
+        """Fire the staged custom program.
+
+        Writes ``1 << (step_count - 1)`` to :data:`REG_PROGRAM_FLAG`. The
+        firmware uses the bitmask both as a "go" trigger and as the
+        step-count signal, mirroring the official app's panel-2 path.
+
+        Args:
+            step_count: must match the number of populated steps from the
+                preceding :meth:`upload_custom_program` call.
+
+        Raises:
+            ValueError: if ``step_count`` is not in 1..6.
+        """
+        if not 1 <= step_count <= CUSTOM_PROGRAM_MAX_STEPS:
+            raise ValueError(
+                f"step_count must be 1..{CUSTOM_PROGRAM_MAX_STEPS} "
+                f"(got {step_count})"
+            )
+        bitmask = 1 << (step_count - 1)
+        return await self.write_register(REG_PROGRAM_FLAG, bitmask)
+
+    async def run_custom_program(
+        self,
+        steps: list[tuple[int, int]] | tuple[tuple[int, int], ...],
+    ) -> PacketStatus:
+        """Upload + commit a custom program in one shot.
+
+        Equivalent to::
+
+            await self.upload_custom_program(steps)
+            await self.commit_custom_program(len(steps))
+        """
+        self._validate_steps(steps)
+        await self.upload_custom_program(steps)
+        return await self.commit_custom_program(len(steps))
+
+    async def set_motor_speed(
+        self,
+        speed: int,
+        *,
+        duration_seconds: int = MAX_STEP_SECONDS,
+    ) -> PacketStatus:
+        """Run the motor at ``speed`` for up to ``duration_seconds``.
+
+        Internally this stages and fires a 1-step custom program. Calling
+        :meth:`set_motor_speed` again while the motor is already running
+        re-stages the buffer with the new speed and refires it — that's
+        the protocol-level mechanism we use for live speed changes
+        (0.3.0) and for melody playback (0.5.0).
+
+        Args:
+            speed: 0..10. ``0`` stops the motor (use :meth:`stop_motor`
+                for that to make intent explicit; this method delegates).
+            duration_seconds: u16 seconds. Defaults to the firmware
+                "run forever" sentinel ``0xFFFF`` so you can call
+                :meth:`stop_motor` at your leisure.
+
+        Raises:
+            ValueError: if ``speed`` is out of range.
+        """
+        if speed == 0:
+            return await self.cancel_program()
+        if not MIN_SPEED <= speed <= MAX_SPEED:
+            raise ValueError(
+                f"speed must be {MIN_SPEED}..{MAX_SPEED} (got {speed})"
+            )
+        if not 0 < duration_seconds <= MAX_STEP_SECONDS:
+            raise ValueError(
+                f"duration_seconds must be 1..{MAX_STEP_SECONDS} "
+                f"(got {duration_seconds})"
+            )
+        return await self.run_custom_program([(speed, duration_seconds)])
+
+    @staticmethod
+    def _validate_steps(
+        steps: list[tuple[int, int]] | tuple[tuple[int, int], ...],
+    ) -> None:
+        if not steps:
+            raise ValueError("steps must not be empty")
+        if len(steps) > CUSTOM_PROGRAM_MAX_STEPS:
+            raise ValueError(
+                f"at most {CUSTOM_PROGRAM_MAX_STEPS} steps supported "
+                f"(got {len(steps)})"
+            )
+        for index, (speed, seconds) in enumerate(steps):
+            if not MIN_SPEED <= speed <= MAX_SPEED:
+                raise ValueError(
+                    f"step {index}: speed must be {MIN_SPEED}..{MAX_SPEED} "
+                    f"(got {speed})"
+                )
+            if not 0 <= seconds <= MAX_STEP_SECONDS:
+                raise ValueError(
+                    f"step {index}: time must be 0..{MAX_STEP_SECONDS} "
+                    f"(got {seconds})"
+                )
 
     # -- internals ----------------------------------------------------------
 
