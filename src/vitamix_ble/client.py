@@ -235,6 +235,40 @@ class VitamixClient:
         """
         return await self.write_register(REG_RECIPE, 0)
 
+    async def load_program(self, slot: int) -> PacketStatus:
+        """Arm a saved program slot.
+
+        The Ascent / Venturist series ships with several factory program
+        slots (Smoothie, Frozen Dessert, Spreads…). Writing the slot
+        number to register :data:`REG_RECIPE` is the same primitive the
+        Perfect Blend app's ``setBlenderProgram`` uses as the very last
+        step after staging the program-step buffer.
+
+        For built-in saved programs the staging is unnecessary because
+        the firmware already has them, so this single write is enough to
+        select the slot.
+
+        Whether the motor *also* spins immediately depends on whether
+        the user has the dial in an "armed" position (see
+        :data:`REG_PANEL_ARMED`). On an idle / un-armed device the slot
+        is just primed; the user still has to physically engage Start.
+
+        Args:
+            slot: 1-indexed saved-program slot. ``0`` is reserved for
+                "no program" — use :meth:`cancel_program` for that to
+                make intent explicit.
+
+        Raises:
+            ValueError: if ``slot`` is not strictly positive.
+            VitamixWriteRejectedError: if the firmware rejects the
+                write (e.g. invalid slot number for this model).
+        """
+        if slot <= 0:
+            raise ValueError(
+                f"slot must be >= 1; use cancel_program() for slot 0 (got {slot})"
+            )
+        return await self.write_register(REG_RECIPE, slot)
+
     # -- internals ----------------------------------------------------------
 
     def _require_client(self) -> BleakClient:

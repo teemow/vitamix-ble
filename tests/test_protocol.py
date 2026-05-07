@@ -49,6 +49,11 @@ class TestEncodeWrite:
         # (case C-panel): write 0x0000 to register 0x0200.
         assert encode_write(0x0200, [0x0000]) == bytes.fromhex("01670200010000")
 
+    def test_load_program_slot_packet(self) -> None:
+        # load_program(slot=2) must produce: fn=01, slave=67, reg=0200,
+        # count=01, value=0002 (little-endian).
+        assert encode_write(0x0200, [0x0002]) == bytes.fromhex("01670200010200")
+
     def test_value_is_little_endian(self) -> None:
         encoded = encode_write(0x3406, [0x4321])
         # header...               value bytes follow

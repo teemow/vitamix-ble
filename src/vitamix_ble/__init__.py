@@ -40,19 +40,19 @@ from .protocol import (
     encode_write,
 )
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 
 __all__ = [
     "CONTAINERS",
+    "Container",
     "NOTIFY_CHARACTERISTIC_UUID",
+    "PacketStatus",
     "SERVICE_UUID",
     "SLAVE_BPANEL",
     "SLAVE_CPANEL",
-    "WRITE_CHARACTERISTIC_UUID",
-    "Container",
-    "PacketStatus",
     "VitamixClient",
     "VitamixState",
+    "WRITE_CHARACTERISTIC_UUID",
     "decode_read_response",
     "decode_write_response",
     "encode_read",
