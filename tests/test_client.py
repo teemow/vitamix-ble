@@ -77,6 +77,24 @@ class TestCustomProgramValidation:
             await client.upload_custom_program([(5, -1)])
 
 
+class TestPlayMelodyValidation:
+    async def test_empty_rejected(self) -> None:
+        client = VitamixClient.__new__(VitamixClient)
+        with pytest.raises(ValueError, match="must not be empty"):
+            await client.play_melody([])
+
+    @pytest.mark.parametrize("speed", [-1, 11])
+    async def test_speed_out_of_range(self, speed: int) -> None:
+        client = VitamixClient.__new__(VitamixClient)
+        with pytest.raises(ValueError, match="speed"):
+            await client.play_melody([(speed, 0.5)])
+
+    async def test_negative_duration(self) -> None:
+        client = VitamixClient.__new__(VitamixClient)
+        with pytest.raises(ValueError, match="duration"):
+            await client.play_melody([(5, -0.1)])
+
+
 class TestCommitCustomProgramValidation:
     @pytest.mark.parametrize("count", [0, -1, CUSTOM_PROGRAM_MAX_STEPS + 1])
     async def test_step_count_out_of_range(self, count: int) -> None:

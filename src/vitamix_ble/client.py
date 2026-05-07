@@ -431,6 +431,61 @@ class VitamixClient:
         """
         return await self.cancel_program()
 
+    async def play_melody(
+        self,
+        notes: list[tuple[int, float]] | tuple[tuple[int, float], ...],
+        *,
+        gap_seconds: float = 0.0,
+        stop_when_done: bool = True,
+    ) -> None:
+        """Play a sequence of (speed, duration_seconds) "notes".
+
+        Each note re-stages a 1-step custom program at the requested
+        speed, runs it for the requested duration, then advances. This
+        is the primitive the Vitamix-blender-music community demos use
+        to coax recognisable tunes out of the variable-speed motor.
+
+        Args:
+            notes: list of ``(speed, seconds)`` pairs. ``speed`` is
+                0..10 (0 = silence/stop). ``seconds`` is the dwell at
+                that speed; floats are accepted for sub-second timing.
+            gap_seconds: optional silence inserted between consecutive
+                notes (motor stops then restarts). Defaults to 0 so
+                back-to-back notes blend smoothly.
+            stop_when_done: stop the motor at the end of the sequence.
+                Set to False if you want to chain another play_melody
+                call without spinning down.
+
+        Raises:
+            ValueError: if ``notes`` is empty, or any speed/duration is
+                out of range.
+        """
+        if not notes:
+            raise ValueError("notes must not be empty")
+        for speed, seconds in notes:
+            if not MIN_SPEED <= speed <= MAX_SPEED:
+                raise ValueError(
+                    f"speed must be {MIN_SPEED}..{MAX_SPEED} (got {speed})"
+                )
+            if seconds <= 0:
+                raise ValueError(
+                    f"duration must be > 0 seconds (got {seconds})"
+                )
+        try:
+            for speed, seconds in notes:
+                if speed == 0:
+                    await self.stop_motor()
+                else:
+                    await self.set_motor_speed(speed)
+                await asyncio.sleep(seconds)
+                if gap_seconds > 0:
+                    await self.stop_motor()
+                    await asyncio.sleep(gap_seconds)
+        finally:
+            if stop_when_done:
+                with contextlib.suppress(Exception):
+                    await self.stop_motor()
+
     @staticmethod
     def _validate_steps(
         steps: list[tuple[int, int]] | tuple[tuple[int, int], ...],
