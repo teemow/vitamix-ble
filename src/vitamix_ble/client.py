@@ -393,7 +393,7 @@ class VitamixClient:
             ValueError: if ``speed`` is out of range.
         """
         if speed == 0:
-            return await self.cancel_program()
+            return await self.stop_motor()
         if not MIN_SPEED <= speed <= MAX_SPEED:
             raise ValueError(
                 f"speed must be {MIN_SPEED}..{MAX_SPEED} (got {speed})"
@@ -404,6 +404,32 @@ class VitamixClient:
                 f"(got {duration_seconds})"
             )
         return await self.run_custom_program([(speed, duration_seconds)])
+
+    async def start_motor(
+        self,
+        speed: int = 5,
+        *,
+        duration_seconds: int = MAX_STEP_SECONDS,
+    ) -> PacketStatus:
+        """Start the motor at ``speed`` (alias for :meth:`set_motor_speed`).
+
+        Defaults to a mid-range Variable-5 so a bare ``start_motor()``
+        call is gentle enough not to launch ingredients out of an open
+        container.
+        """
+        return await self.set_motor_speed(
+            speed, duration_seconds=duration_seconds
+        )
+
+    async def stop_motor(self) -> PacketStatus:
+        """Stop the motor.
+
+        Identical wire packet to :meth:`cancel_program` (writes 0 to
+        REG_RECIPE) — the firmware halts the motor as a side-effect of
+        unloading the program. Kept as a separate name so high-level
+        callers can express intent unambiguously.
+        """
+        return await self.cancel_program()
 
     @staticmethod
     def _validate_steps(
