@@ -144,9 +144,7 @@ class TestCustomProgramPackets:
         "step_count,bitmask",
         [(1, 0x01), (2, 0x02), (3, 0x04), (4, 0x08), (5, 0x10), (6, 0x20)],
     )
-    def test_commit_bitmask_matches_step_count(
-        self, step_count: int, bitmask: int
-    ) -> None:
+    def test_commit_bitmask_matches_step_count(self, step_count: int, bitmask: int) -> None:
         # The "fire" packet is a single u16 = (1 << (step_count - 1))
         # written to REG_PROGRAM_FLAG (0x3483).
         packet = encode_write(REG_PROGRAM_FLAG, [bitmask])

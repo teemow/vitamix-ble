@@ -107,9 +107,7 @@ class VitamixClient:
         blenders advertise sparingly while idle. Callers that already have a
         cached :class:`BLEDevice` should pass it to ``__init__`` directly.
         """
-        device = await BleakScanner.find_device_by_address(
-            address, timeout=scan_timeout
-        )
+        device = await BleakScanner.find_device_by_address(address, timeout=scan_timeout)
         if device is None:
             # Fall back to direct connect by address: BlueZ will use its
             # own cache if the device is known.
@@ -134,13 +132,9 @@ class VitamixClient:
         """Open the BLE connection and subscribe to notifications."""
         if self._client is not None and self._client.is_connected:
             return
-        self._client = BleakClient(
-            self._ble_device, timeout=self._connect_timeout
-        )
+        self._client = BleakClient(self._ble_device, timeout=self._connect_timeout)
         await self._client.__aenter__()
-        await self._client.start_notify(
-            NOTIFY_CHARACTERISTIC_UUID, self._on_notify
-        )
+        await self._client.start_notify(NOTIFY_CHARACTERISTIC_UUID, self._on_notify)
         # Give the device a moment to settle before the first request.
         await asyncio.sleep(0.1)
 
@@ -169,16 +163,12 @@ class VitamixClient:
         request = encode_read(register, count, slave=self._slave)
         async with self._lock:
             self._drain_notifications()
-            await client.write_gatt_char(
-                WRITE_CHARACTERISTIC_UUID, request, response=True
-            )
+            await client.write_gatt_char(WRITE_CHARACTERISTIC_UUID, request, response=True)
             response = await self._wait_notification()
         try:
             values, _status = decode_read_response(response, count)
         except ProtocolError as exc:
-            raise VitamixError(
-                f"could not parse read response {response.hex()}: {exc}"
-            ) from exc
+            raise VitamixError(f"could not parse read response {response.hex()}: {exc}") from exc
         return values
 
     async def read_register(self, register: int) -> int:
@@ -198,9 +188,7 @@ class VitamixClient:
         request = encode_write(register, values, slave=self._slave)
         async with self._lock:
             self._drain_notifications()
-            await client.write_gatt_char(
-                WRITE_CHARACTERISTIC_UUID, request, response=True
-            )
+            await client.write_gatt_char(WRITE_CHARACTERISTIC_UUID, request, response=True)
             response = await self._wait_notification()
         status = decode_write_response(response)
         if not status.ok:
@@ -271,9 +259,7 @@ class VitamixClient:
                 write (e.g. invalid slot number for this model).
         """
         if slot <= 0:
-            raise ValueError(
-                f"slot must be >= 1; use cancel_program() for slot 0 (got {slot})"
-            )
+            raise ValueError(f"slot must be >= 1; use cancel_program() for slot 0 (got {slot})")
         return await self.write_register(REG_RECIPE, slot)
 
     # -- custom-program / motor control (0.3.0+) ----------------------------
@@ -327,9 +313,7 @@ class VitamixClient:
         batch = (DEFAULT_MTU - 5) // 2
         for offset in range(0, len(payload), batch):
             slice_ = payload[offset : offset + batch]
-            await self.write_registers(
-                REG_CUSTOM_PROGRAM_BASE + offset, slice_
-            )
+            await self.write_registers(REG_CUSTOM_PROGRAM_BASE + offset, slice_)
 
     async def commit_custom_program(self, step_count: int) -> PacketStatus:
         """Fire the staged custom program.
@@ -346,10 +330,7 @@ class VitamixClient:
             ValueError: if ``step_count`` is not in 1..6.
         """
         if not 1 <= step_count <= CUSTOM_PROGRAM_MAX_STEPS:
-            raise ValueError(
-                f"step_count must be 1..{CUSTOM_PROGRAM_MAX_STEPS} "
-                f"(got {step_count})"
-            )
+            raise ValueError(f"step_count must be 1..{CUSTOM_PROGRAM_MAX_STEPS} (got {step_count})")
         bitmask = 1 << (step_count - 1)
         return await self.write_register(REG_PROGRAM_FLAG, bitmask)
 
@@ -395,13 +376,10 @@ class VitamixClient:
         if speed == 0:
             return await self.stop_motor()
         if not MIN_SPEED <= speed <= MAX_SPEED:
-            raise ValueError(
-                f"speed must be {MIN_SPEED}..{MAX_SPEED} (got {speed})"
-            )
+            raise ValueError(f"speed must be {MIN_SPEED}..{MAX_SPEED} (got {speed})")
         if not 0 < duration_seconds <= MAX_STEP_SECONDS:
             raise ValueError(
-                f"duration_seconds must be 1..{MAX_STEP_SECONDS} "
-                f"(got {duration_seconds})"
+                f"duration_seconds must be 1..{MAX_STEP_SECONDS} (got {duration_seconds})"
             )
         return await self.run_custom_program([(speed, duration_seconds)])
 
@@ -417,9 +395,7 @@ class VitamixClient:
         call is gentle enough not to launch ingredients out of an open
         container.
         """
-        return await self.set_motor_speed(
-            speed, duration_seconds=duration_seconds
-        )
+        return await self.set_motor_speed(speed, duration_seconds=duration_seconds)
 
     async def stop_motor(self) -> PacketStatus:
         """Stop the motor.
@@ -464,13 +440,9 @@ class VitamixClient:
             raise ValueError("notes must not be empty")
         for speed, seconds in notes:
             if not MIN_SPEED <= speed <= MAX_SPEED:
-                raise ValueError(
-                    f"speed must be {MIN_SPEED}..{MAX_SPEED} (got {speed})"
-                )
+                raise ValueError(f"speed must be {MIN_SPEED}..{MAX_SPEED} (got {speed})")
             if seconds <= 0:
-                raise ValueError(
-                    f"duration must be > 0 seconds (got {seconds})"
-                )
+                raise ValueError(f"duration must be > 0 seconds (got {seconds})")
         try:
             for speed, seconds in notes:
                 if speed == 0:
@@ -494,19 +466,16 @@ class VitamixClient:
             raise ValueError("steps must not be empty")
         if len(steps) > CUSTOM_PROGRAM_MAX_STEPS:
             raise ValueError(
-                f"at most {CUSTOM_PROGRAM_MAX_STEPS} steps supported "
-                f"(got {len(steps)})"
+                f"at most {CUSTOM_PROGRAM_MAX_STEPS} steps supported (got {len(steps)})"
             )
         for index, (speed, seconds) in enumerate(steps):
             if not MIN_SPEED <= speed <= MAX_SPEED:
                 raise ValueError(
-                    f"step {index}: speed must be {MIN_SPEED}..{MAX_SPEED} "
-                    f"(got {speed})"
+                    f"step {index}: speed must be {MIN_SPEED}..{MAX_SPEED} (got {speed})"
                 )
             if not 0 <= seconds <= MAX_STEP_SECONDS:
                 raise ValueError(
-                    f"step {index}: time must be 0..{MAX_STEP_SECONDS} "
-                    f"(got {seconds})"
+                    f"step {index}: time must be 0..{MAX_STEP_SECONDS} (got {seconds})"
                 )
 
     # -- internals ----------------------------------------------------------
@@ -530,13 +499,9 @@ class VitamixClient:
 
     async def _wait_notification(self) -> bytes:
         try:
-            return await asyncio.wait_for(
-                self._notifications.get(), timeout=self._request_timeout
-            )
+            return await asyncio.wait_for(self._notifications.get(), timeout=self._request_timeout)
         except TimeoutError as exc:
-            raise VitamixTimeoutError(
-                f"no response within {self._request_timeout}s"
-            ) from exc
+            raise VitamixTimeoutError(f"no response within {self._request_timeout}s") from exc
 
 
 @asynccontextmanager
