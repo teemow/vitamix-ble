@@ -138,7 +138,7 @@ def encode_write(
             raise ValueError(
                 f"values[{index}] = {value!r} is not a valid u16",
             )
-        pkt.append(value & 0xFF)            # low byte first (little-endian)
+        pkt.append(value & 0xFF)  # low byte first (little-endian)
         pkt.append((value >> 8) & 0xFF)
     return bytes(pkt)
 

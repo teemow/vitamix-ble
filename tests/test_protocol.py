@@ -85,9 +85,7 @@ class TestDecodeReadResponse:
 
     def test_motor_constants(self) -> None:
         # Live capture: 4 registers from 0x010A read together
-        values, status = decode_read_response(
-            bytes.fromhex("0200e02e881300000000"), 4
-        )
+        values, status = decode_read_response(bytes.fromhex("0200e02e881300000000"), 4)
         assert values == [12000, 5000, 0, 0]
         assert status == 0x00
 
